@@ -2,8 +2,6 @@
  License: http://www.apache.org/licenses/LICENSE-2.0 
  Home page: http://code.google.com/p/dapper-dot-net/
 
- Note: to build on C# 3.0 + .NET 3.5, include the CSHARP30 compiler symbol (and yes,
- I know the difference between language and runtime versions; this is a compromise).
  */
 
 using System;
@@ -124,17 +122,12 @@ namespace Dapper
         /// <summary>
         /// Initialize the command definition
         /// </summary>
-#if CSHARP30
-        public CommandDefinition(string commandText, object parameters, IDbTransaction transaction, int? commandTimeout,
-            CommandType? commandType, CommandFlags flags)
-#else
         public CommandDefinition(string commandText, object parameters = null, IDbTransaction transaction = null, int? commandTimeout = null,
             CommandType? commandType = null, CommandFlags flags = CommandFlags.Buffered
 #if ASYNC
             , CancellationToken cancellationToken = default(CancellationToken)
 #endif
             )
-#endif
         {
             this.commandText = commandText;
             this.parameters = parameters;
@@ -537,39 +530,6 @@ namespace Dapper
             var handler = QueryCachePurged;
             if (handler != null) handler(null, EventArgs.Empty);
         }
-#if CSHARP30
-        private static readonly Dictionary<Identity, CacheInfo> _queryCache = new Dictionary<Identity, CacheInfo>();
-        // note: conflicts between readers and writers are so short-lived that it isn't worth the overhead of
-        // ReaderWriterLockSlim etc; a simple lock is faster
-        private static void SetQueryCache(Identity key, CacheInfo value)
-        {
-            lock (_queryCache) { _queryCache[key] = value; }
-        }
-        private static bool TryGetQueryCache(Identity key, out CacheInfo value)
-        {
-            lock (_queryCache) { return _queryCache.TryGetValue(key, out value); }
-        }
-        private static void PurgeQueryCacheByType(Type type)
-        {
-            lock (_queryCache)
-            {
-                var toRemove = _queryCache.Keys.Where(id => id.type == type).ToArray();
-                foreach (var key in toRemove)
-                    _queryCache.Remove(key);
-            }
-        }
-        /// <summary>
-        /// Purge the query cache 
-        /// </summary>
-        public static void PurgeQueryCache()
-        {
-            lock (_queryCache)
-            {
-                _queryCache.Clear();
-            }
-            OnQueryCachePurged();
-        }
-#else
         static readonly System.Collections.Concurrent.ConcurrentDictionary<Identity, CacheInfo> _queryCache = new System.Collections.Concurrent.ConcurrentDictionary<Identity, CacheInfo>();
         private static void SetQueryCache(Identity key, CacheInfo value)
         {
@@ -677,7 +637,6 @@ namespace Dapper
                    select Tuple.Create(pair.Key, pair.Value);
 
         }
-#endif
 
 
         static Dictionary<Type, DbType> typeMap;
@@ -1035,159 +994,13 @@ namespace Dapper
             return (source == null || source is List<T>) ? (List<T>)source : source.ToList();
         }
 
-#if CSHARP30
-        /// <summary>
-        /// Execute parameterized SQL  
-        /// </summary>
-        /// <returns>Number of rows affected</returns>
-        public static int Execute(this IDbConnection cnn, string sql, object param)
-        {
-            return Execute(cnn, sql, param, null, null, null);
-        }
-
-        /// <summary>
-        /// Execute parameterized SQL
-        /// </summary>
-        /// <returns>Number of rows affected</returns>
-        public static int Execute(this IDbConnection cnn, string sql, object param, IDbTransaction transaction)
-        {
-            return Execute(cnn, sql, param, transaction, null, null);
-        }
-
-        /// <summary>
-        /// Execute parameterized SQL
-        /// </summary>
-        /// <returns>Number of rows affected</returns>
-        public static int Execute(this IDbConnection cnn, string sql, object param, CommandType commandType)
-        {
-            return Execute(cnn, sql, param, null, null, commandType);
-        }
-
-        /// <summary>
-        /// Execute parameterized SQL
-        /// </summary>
-        /// <returns>Number of rows affected</returns>
-        public static int Execute(this IDbConnection cnn, string sql, object param, IDbTransaction transaction, CommandType commandType)
-        {
-            return Execute(cnn, sql, param, transaction, null, commandType);
-        }
-
-        /// <summary>
-        /// Execute parameterized SQL and return an <see cref="IDataReader"/>
-        /// </summary>
-        /// <returns>An <see cref="IDataReader"/> that can be used to iterate over the results of the SQL query.</returns>
-        public static IDataReader ExecuteReader(this IDbConnection cnn, string sql, object param)
-        {
-            return ExecuteReader(cnn, sql, param, null, null, null);
-        }
-
-        /// <summary>
-        /// Execute parameterized SQL and return an <see cref="IDataReader"/>
-        /// </summary>
-        /// <returns>An <see cref="IDataReader"/> that can be used to iterate over the results of the SQL query.</returns>
-        public static IDataReader ExecuteReader(this IDbConnection cnn, string sql, object param, IDbTransaction transaction)
-        {
-            return ExecuteReader(cnn, sql, param, transaction, null, null);
-        }
-
-        /// <summary>
-        /// Execute parameterized SQL and return an <see cref="IDataReader"/>
-        /// </summary>
-        /// <returns>An <see cref="IDataReader"/> that can be used to iterate over the results of the SQL query.</returns>
-        public static IDataReader ExecuteReader(this IDbConnection cnn, string sql, object param, CommandType commandType)
-        {
-            return ExecuteReader(cnn, sql, param, null, null, commandType);
-        }
-
-        /// <summary>
-        /// Execute parameterized SQL and return an <see cref="IDataReader"/>
-        /// </summary>
-        /// <returns>An <see cref="IDataReader"/> that can be used to iterate over the results of the SQL query.</returns>
-        public static IDataReader ExecuteReader(this IDbConnection cnn, string sql, object param, IDbTransaction transaction, CommandType commandType)
-        {
-            return ExecuteReader(cnn, sql, param, transaction, null, commandType);
-        }
-
-        /// <summary>
-        /// Executes a query, returning the data typed as per T
-        /// </summary>
-        /// <returns>A sequence of data of the supplied type; if a basic type (int, string, etc) is queried then the data from the first column in assumed, otherwise an instance is
-        /// created per row, and a direct column-name===member-name mapping is assumed (case insensitive).
-        /// </returns>
-        public static IEnumerable<T> Query<T>(this IDbConnection cnn, string sql, object param)
-        {
-            return Query<T>(cnn, sql, param, null, true, null, null);
-        }
-
-        /// <summary>
-        /// Executes a query, returning the data typed as per T
-        /// </summary>
-        /// <returns>A sequence of data of the supplied type; if a basic type (int, string, etc) is queried then the data from the first column in assumed, otherwise an instance is
-        /// created per row, and a direct column-name===member-name mapping is assumed (case insensitive).
-        /// </returns>
-        public static IEnumerable<T> Query<T>(this IDbConnection cnn, string sql, object param, IDbTransaction transaction)
-        {
-            return Query<T>(cnn, sql, param, transaction, true, null, null);
-        }
-
-        /// <summary>
-        /// Executes a query, returning the data typed as per T
-        /// </summary>
-        /// <returns>A sequence of data of the supplied type; if a basic type (int, string, etc) is queried then the data from the first column in assumed, otherwise an instance is
-        /// created per row, and a direct column-name===member-name mapping is assumed (case insensitive).
-        /// </returns>
-        public static IEnumerable<T> Query<T>(this IDbConnection cnn, string sql, object param, CommandType commandType)
-        {
-            return Query<T>(cnn, sql, param, null, true, null, commandType);
-        }
-
-        /// <summary>
-        /// Executes a query, returning the data typed as per T
-        /// </summary>
-        /// <returns>A sequence of data of the supplied type; if a basic type (int, string, etc) is queried then the data from the first column in assumed, otherwise an instance is
-        /// created per row, and a direct column-name===member-name mapping is assumed (case insensitive).
-        /// </returns>
-        public static IEnumerable<T> Query<T>(this IDbConnection cnn, string sql, object param, IDbTransaction transaction, CommandType commandType)
-        {
-            return Query<T>(cnn, sql, param, transaction, true, null, commandType);
-        }
-
-        /// <summary>
-        /// Execute a command that returns multiple result sets, and access each in turn
-        /// </summary>
-        public static GridReader QueryMultiple(this IDbConnection cnn, string sql, object param, IDbTransaction transaction)
-        {
-            return QueryMultiple(cnn, sql, param, transaction, null, null);
-        }
-
-        /// <summary>
-        /// Execute a command that returns multiple result sets, and access each in turn
-        /// </summary>
-        public static GridReader QueryMultiple(this IDbConnection cnn, string sql, object param, CommandType commandType)
-        {
-            return QueryMultiple(cnn, sql, param, null, null, commandType);
-        }
-
-        /// <summary>
-        /// Execute a command that returns multiple result sets, and access each in turn
-        /// </summary>
-        public static GridReader QueryMultiple(this IDbConnection cnn, string sql, object param, IDbTransaction transaction, CommandType commandType)
-        {
-            return QueryMultiple(cnn, sql, param, transaction, null, commandType);
-        }
-#endif
-
 
         /// <summary>
         /// Execute parameterized SQL  
         /// </summary>
         /// <returns>Number of rows affected</returns>
         public static int Execute(
-#if CSHARP30
-this IDbConnection cnn, string sql, object param, IDbTransaction transaction, int? commandTimeout, CommandType? commandType
-#else
 this IDbConnection cnn, string sql, object param = null, IDbTransaction transaction = null, int? commandTimeout = null, CommandType? commandType = null
-#endif
 )
         {
             var command = new CommandDefinition(sql, (object)param, transaction, commandTimeout, commandType, CommandFlags.Buffered);
@@ -1208,11 +1021,7 @@ this IDbConnection cnn, string sql, object param = null, IDbTransaction transact
         /// </summary>
         /// <returns>The first cell selected</returns>
         public static object ExecuteScalar(
-#if CSHARP30
-this IDbConnection cnn, string sql, object param, IDbTransaction transaction, int? commandTimeout, CommandType? commandType
-#else
 this IDbConnection cnn, string sql, object param = null, IDbTransaction transaction = null, int? commandTimeout = null, CommandType? commandType = null
-#endif
 )
         {
             var command = new CommandDefinition(sql, (object)param, transaction, commandTimeout, commandType, CommandFlags.Buffered);
@@ -1224,11 +1033,7 @@ this IDbConnection cnn, string sql, object param = null, IDbTransaction transact
         /// </summary>
         /// <returns>The first cell selected</returns>
         public static T ExecuteScalar<T>(
-#if CSHARP30
-this IDbConnection cnn, string sql, object param, IDbTransaction transaction, int? commandTimeout, CommandType? commandType
-#else
 this IDbConnection cnn, string sql, object param = null, IDbTransaction transaction = null, int? commandTimeout = null, CommandType? commandType = null
-#endif
 )
         {
             var command = new CommandDefinition(sql, (object)param, transaction, commandTimeout, commandType, CommandFlags.Buffered);
@@ -1339,11 +1144,7 @@ this IDbConnection cnn, string sql, object param = null, IDbTransaction transact
         /// </code>
         /// </example>
         public static IDataReader ExecuteReader(
-#if CSHARP30
-this IDbConnection cnn, string sql, object param, IDbTransaction transaction, int? commandTimeout, CommandType? commandType
-#else
 this IDbConnection cnn, string sql, object param = null, IDbTransaction transaction = null, int? commandTimeout = null, CommandType? commandType = null
-#endif
 )
         {
             var command = new CommandDefinition(sql, (object)param, transaction, commandTimeout, commandType, CommandFlags.Buffered);
@@ -1381,7 +1182,6 @@ this IDbConnection cnn, string sql, object param = null, IDbTransaction transact
             return new WrappedReader(dbcmd, reader);
         }
 
-#if !CSHARP30
         /// <summary>
         /// Return a list of dynamic objects, reader is closed after the call
         /// </summary>
@@ -1390,47 +1190,6 @@ this IDbConnection cnn, string sql, object param = null, IDbTransaction transact
         {
             return Query<DapperRow>(cnn, sql, param as object, transaction, buffered, commandTimeout, commandType);
         }
-#else
-        /// <summary>
-        /// Return a list of dynamic objects, reader is closed after the call
-        /// </summary>
-        public static IEnumerable<IDictionary<string, object>> Query(this IDbConnection cnn, string sql, object param)
-        {
-            return Query(cnn, sql, param, null, true, null, null);
-        }
-
-        /// <summary>
-        /// Return a list of dynamic objects, reader is closed after the call
-        /// </summary>
-        public static IEnumerable<IDictionary<string, object>> Query(this IDbConnection cnn, string sql, object param, IDbTransaction transaction)
-        {
-            return Query(cnn, sql, param, transaction, true, null, null);
-        }
-
-        /// <summary>
-        /// Return a list of dynamic objects, reader is closed after the call
-        /// </summary>
-        public static IEnumerable<IDictionary<string, object>> Query(this IDbConnection cnn, string sql, object param, CommandType? commandType)
-        {
-            return Query(cnn, sql, param, null, true, null, commandType);
-        }
-
-        /// <summary>
-        /// Return a list of dynamic objects, reader is closed after the call
-        /// </summary>
-        public static IEnumerable<IDictionary<string, object>> Query(this IDbConnection cnn, string sql, object param, IDbTransaction transaction, CommandType? commandType)
-        {
-            return Query(cnn, sql, param, transaction, true, null, commandType);
-        }
-
-        /// <summary>
-        /// Return a list of dynamic objects, reader is closed after the call
-        /// </summary>
-        public static IEnumerable<IDictionary<string, object>> Query(this IDbConnection cnn, string sql, object param, IDbTransaction transaction, bool buffered, int? commandTimeout, CommandType? commandType)
-        {
-            return Query<IDictionary<string, object>>(cnn, sql, param, transaction, buffered, commandTimeout, commandType);
-        }
-#endif
 
         /// <summary>
         /// Executes a query, returning the data typed as per T
@@ -1440,11 +1199,7 @@ this IDbConnection cnn, string sql, object param = null, IDbTransaction transact
         /// created per row, and a direct column-name===member-name mapping is assumed (case insensitive).
         /// </returns>
         public static IEnumerable<T> Query<T>(
-#if CSHARP30
-this IDbConnection cnn, string sql, object param, IDbTransaction transaction, bool buffered, int? commandTimeout, CommandType? commandType
-#else
 this IDbConnection cnn, string sql, object param = null, IDbTransaction transaction = null, bool buffered = true, int? commandTimeout = null, CommandType? commandType = null
-#endif
 )
         {
             var command = new CommandDefinition(sql, (object)param, transaction, commandTimeout, commandType, buffered ? CommandFlags.Buffered : CommandFlags.None);
@@ -1459,11 +1214,7 @@ this IDbConnection cnn, string sql, object param = null, IDbTransaction transact
         /// created per row, and a direct column-name===member-name mapping is assumed (case insensitive).
         /// </returns>
         public static IEnumerable<object> Query(
-#if CSHARP30
-this IDbConnection cnn, Type type, string sql, object param, IDbTransaction transaction, bool buffered, int? commandTimeout, CommandType? commandType
-#else
 this IDbConnection cnn, Type type, string sql, object param = null, IDbTransaction transaction = null, bool buffered = true, int? commandTimeout = null, CommandType? commandType = null
-#endif
         )
         {
             if (type == null) throw new ArgumentNullException("type");
@@ -1490,11 +1241,7 @@ this IDbConnection cnn, Type type, string sql, object param = null, IDbTransacti
         /// Execute a command that returns multiple result sets, and access each in turn
         /// </summary>
         public static GridReader QueryMultiple(
-#if CSHARP30
-this IDbConnection cnn, string sql, object param, IDbTransaction transaction, int? commandTimeout, CommandType? commandType
-#else
             this IDbConnection cnn, string sql, object param = null, IDbTransaction transaction = null, int? commandTimeout = null, CommandType? commandType = null
-#endif
 )
         {
             var command = new CommandDefinition(sql, (object)param, transaction, commandTimeout, commandType, CommandFlags.Buffered);
@@ -1623,11 +1370,7 @@ this IDbConnection cnn, string sql, object param, IDbTransaction transaction, in
         /// <param name="commandType">Is it a stored proc or a batch?</param>
         /// <returns></returns>
         public static IEnumerable<TReturn> Query<TFirst, TSecond, TReturn>(
-#if CSHARP30
-this IDbConnection cnn, string sql, Func<TFirst, TSecond, TReturn> map, object param, IDbTransaction transaction, bool buffered, string splitOn, int? commandTimeout, CommandType? commandType
-#else
 this IDbConnection cnn, string sql, Func<TFirst, TSecond, TReturn> map, object param = null, IDbTransaction transaction = null, bool buffered = true, string splitOn = "Id", int? commandTimeout = null, CommandType? commandType = null
-#endif
 )
         {
             return MultiMap<TFirst, TSecond, DontMap, DontMap, DontMap, DontMap, DontMap, TReturn>(cnn, sql, map, param as object, transaction, buffered, splitOn, commandTimeout, commandType);
@@ -1651,11 +1394,7 @@ this IDbConnection cnn, string sql, Func<TFirst, TSecond, TReturn> map, object p
         /// <param name="commandType"></param>
         /// <returns></returns>
         public static IEnumerable<TReturn> Query<TFirst, TSecond, TThird, TReturn>(
-#if CSHARP30
-this IDbConnection cnn, string sql, Func<TFirst, TSecond, TThird, TReturn> map, object param, IDbTransaction transaction, bool buffered, string splitOn, int? commandTimeout, CommandType? commandType
-#else
 this IDbConnection cnn, string sql, Func<TFirst, TSecond, TThird, TReturn> map, object param = null, IDbTransaction transaction = null, bool buffered = true, string splitOn = "Id", int? commandTimeout = null, CommandType? commandType = null
-#endif
 )
         {
             return MultiMap<TFirst, TSecond, TThird, DontMap, DontMap, DontMap, DontMap, TReturn>(cnn, sql, map, param as object, transaction, buffered, splitOn, commandTimeout, commandType);
@@ -1680,17 +1419,12 @@ this IDbConnection cnn, string sql, Func<TFirst, TSecond, TThird, TReturn> map, 
         /// <param name="commandType"></param>
         /// <returns></returns>
         public static IEnumerable<TReturn> Query<TFirst, TSecond, TThird, TFourth, TReturn>(
-#if CSHARP30
-this IDbConnection cnn, string sql, Func<TFirst, TSecond, TThird, TFourth, TReturn> map, object param, IDbTransaction transaction, bool buffered, string splitOn, int? commandTimeout, CommandType? commandType
-#else
 this IDbConnection cnn, string sql, Func<TFirst, TSecond, TThird, TFourth, TReturn> map, object param = null, IDbTransaction transaction = null, bool buffered = true, string splitOn = "Id", int? commandTimeout = null, CommandType? commandType = null
-#endif
 )
         {
             return MultiMap<TFirst, TSecond, TThird, TFourth, DontMap, DontMap, DontMap, TReturn>(cnn, sql, map, param as object, transaction, buffered, splitOn, commandTimeout, commandType);
         }
 
-#if !CSHARP30
         /// <summary>
         /// Perform a multi mapping query with 5 input parameters
         /// </summary>
@@ -1792,7 +1526,6 @@ this IDbConnection cnn, string sql, Func<TFirst, TSecond, TThird, TFourth, TRetu
             var results = MultiMapImpl<TReturn>(cnn, command, types, map, splitOn, null, null, true);
             return buffered ? results.ToList() : results;
         }
-#endif
         partial class DontMap { }
         static IEnumerable<TReturn> MultiMap<TFirst, TSecond, TThird, TFourth, TFifth, TSixth, TSeventh, TReturn>(
             this IDbConnection cnn, string sql, Delegate map, object param, IDbTransaction transaction, bool buffered, string splitOn, int? commandTimeout, CommandType? commandType)
@@ -1949,14 +1682,12 @@ this IDbConnection cnn, string sql, Func<TFirst, TSecond, TThird, TFourth, TRetu
                     return r => ((Func<TFirst, TSecond, TThird, TReturn>)map)((TFirst)deserializer(r), (TSecond)otherDeserializers[0](r), (TThird)otherDeserializers[1](r));
                 case 3:
                     return r => ((Func<TFirst, TSecond, TThird, TFourth, TReturn>)map)((TFirst)deserializer(r), (TSecond)otherDeserializers[0](r), (TThird)otherDeserializers[1](r), (TFourth)otherDeserializers[2](r));
-#if !CSHARP30
                 case 4:
                     return r => ((Func<TFirst, TSecond, TThird, TFourth, TFifth, TReturn>)map)((TFirst)deserializer(r), (TSecond)otherDeserializers[0](r), (TThird)otherDeserializers[1](r), (TFourth)otherDeserializers[2](r), (TFifth)otherDeserializers[3](r));
                 case 5:
                     return r => ((Func<TFirst, TSecond, TThird, TFourth, TFifth, TSixth, TReturn>)map)((TFirst)deserializer(r), (TSecond)otherDeserializers[0](r), (TThird)otherDeserializers[1](r), (TFourth)otherDeserializers[2](r), (TFifth)otherDeserializers[3](r), (TSixth)otherDeserializers[4](r));
                 case 6:
                     return r => ((Func<TFirst, TSecond, TThird, TFourth, TFifth, TSixth, TSeventh, TReturn>)map)((TFirst)deserializer(r), (TSecond)otherDeserializers[0](r), (TThird)otherDeserializers[1](r), (TFourth)otherDeserializers[2](r), (TFifth)otherDeserializers[3](r), (TSixth)otherDeserializers[4](r), (TSeventh)otherDeserializers[5](r));
-#endif
                 default:
                     throw new NotSupportedException();
             }
@@ -2175,19 +1906,12 @@ this IDbConnection cnn, string sql, Func<TFirst, TSecond, TThird, TFourth, TRetu
 
         private static Func<IDataReader, object> GetDeserializer(Type type, IDataReader reader, int startBound, int length, bool returnNullIfFirstMissing)
         {
-#if !CSHARP30
             // dynamic is passed in as Object ... by c# design
             if (type == typeof(object)
                 || type == typeof(DapperRow))
             {
                 return GetDapperRowDeserializer(reader, startBound, length, returnNullIfFirstMissing);
             }
-#else
-            if (type.IsAssignableFrom(typeof(Dictionary<string, object>)))
-            {
-                return GetDictionaryDeserializer(reader, startBound, length, returnNullIfFirstMissing);
-            }
-#endif
             Type underlyingType = null;
             if (!(typeMap.ContainsKey(type) || type.IsEnum || type.FullName == LinqBinary ||
                 (type.IsValueType && (underlyingType = Nullable.GetUnderlyingType(type)) != null && underlyingType.IsEnum)))
@@ -2207,7 +1931,6 @@ this IDbConnection cnn, string sql, Func<TFirst, TSecond, TThird, TFourth, TRetu
                 handler.Parse(type, reader.GetValue(startBound));
         }
 
-#if !CSHARP30
         private sealed partial class DapperTable
         {
             string[] fieldNames;
@@ -2536,7 +2259,6 @@ this IDbConnection cnn, string sql, Func<TFirst, TSecond, TThird, TFourth, TRetu
 
 #endregion
         }
-#endif
         private static Exception MultiMapException(IDataRecord reader)
         {
             bool hasFields = false;
@@ -2549,7 +2271,6 @@ this IDbConnection cnn, string sql, Func<TFirst, TSecond, TThird, TFourth, TRetu
                 return new InvalidOperationException("No columns were selected");
         }
         
-#if !CSHARP30
         internal static Func<IDataReader, object> GetDapperRowDeserializer(IDataRecord reader, int startBound, int length, bool returnNullIfFirstMissing)
         {
             var fieldCount = reader.FieldCount;
@@ -2611,38 +2332,6 @@ this IDbConnection cnn, string sql, Func<TFirst, TSecond, TThird, TFourth, TRetu
                     return new DapperRow(table, values);
                 };
         }
-#else
-        internal static Func<IDataReader, object> GetDictionaryDeserializer(IDataRecord reader, int startBound, int length, bool returnNullIfFirstMissing)
-        {
-            var fieldCount = reader.FieldCount;
-            if (length == -1)
-            {
-                length = fieldCount - startBound;
-            }
-
-            if (fieldCount <= startBound)
-            {
-                throw MultiMapException(reader);
-            }
-
-            return
-                 r =>
-                 {
-                     IDictionary<string, object> row = new Dictionary<string, object>(length);
-                     for (var i = startBound; i < startBound + length; i++)
-                     {
-                         var tmp = r.GetValue(i);
-                         tmp = tmp == DBNull.Value ? null : tmp;
-                         row[r.GetName(i)] = tmp;
-                         if (returnNullIfFirstMissing && i == startBound && tmp == null)
-                         {
-                             return null;
-                         }
-                     }
-                     return row;
-                 };
-        }
-#endif
         /// <summary>
         /// Internal use only
         /// </summary>
@@ -3543,11 +3232,7 @@ this IDbConnection cnn, string sql, Func<TFirst, TSecond, TThird, TFourth, TRetu
         /// <param name="returnNullIfFirstMissing"></param>
         /// <returns></returns>
         public static Func<IDataReader, object> GetTypeDeserializer(
-#if CSHARP30
-Type type, IDataReader reader, int startBound, int length, bool returnNullIfFirstMissing
-#else
 Type type, IDataReader reader, int startBound = 0, int length = -1, bool returnNullIfFirstMissing = false
-#endif
 )
         {
 
@@ -4124,7 +3809,6 @@ Type type, IDataReader reader, int startBound = 0, int length = -1, bool returnN
                 this.addToCache = addToCache;
             }
 
-#if !CSHARP30
 
             /// <summary>
             /// Read the next grid of results, returned as a dynamic object
@@ -4134,25 +3818,11 @@ Type type, IDataReader reader, int startBound = 0, int length = -1, bool returnN
             {
                 return ReadImpl<dynamic>(typeof(DapperRow), buffered);
             }
-#endif
 
-#if CSHARP30
             /// <summary>
             /// Read the next grid of results
             /// </summary>
-            public IEnumerable<T> Read<T>()
-            {
-                return Read<T>(true);
-            }
-#endif
-            /// <summary>
-            /// Read the next grid of results
-            /// </summary>
-#if CSHARP30
-            public IEnumerable<T> Read<T>(bool buffered)
-#else
             public IEnumerable<T> Read<T>(bool buffered = true)
-#endif
             {
                 return ReadImpl<T>(typeof(T), buffered);
             }
@@ -4160,11 +3830,7 @@ Type type, IDataReader reader, int startBound = 0, int length = -1, bool returnN
             /// <summary>
             /// Read the next grid of results
             /// </summary>
-#if CSHARP30
-            public IEnumerable<object> Read(Type type, bool buffered)
-#else
             public IEnumerable<object> Read(Type type, bool buffered = true)
-#endif
             {
                 if (type == null) throw new ArgumentNullException("type");
                 return ReadImpl<object>(type, buffered);
@@ -4214,68 +3880,29 @@ Type type, IDataReader reader, int startBound = 0, int length = -1, bool returnN
                 }
             }
 
-#if CSHARP30
             /// <summary>
             /// Read multiple objects from a single record set on the grid
             /// </summary>
-            public IEnumerable<TReturn> Read<TFirst, TSecond, TReturn>(Func<TFirst, TSecond, TReturn> func, string splitOn)
-            {
-                return Read<TFirst, TSecond, TReturn>(func, splitOn, true);
-            }
-#endif
-            /// <summary>
-            /// Read multiple objects from a single record set on the grid
-            /// </summary>
-#if CSHARP30
-            public IEnumerable<TReturn> Read<TFirst, TSecond, TReturn>(Func<TFirst, TSecond, TReturn> func, string splitOn, bool buffered)
-#else
             public IEnumerable<TReturn> Read<TFirst, TSecond, TReturn>(Func<TFirst, TSecond, TReturn> func, string splitOn = "id", bool buffered = true)
-#endif
             {
                 var result = MultiReadInternal<TFirst, TSecond, DontMap, DontMap, DontMap, DontMap, DontMap, TReturn>(func, splitOn);
                 return buffered ? result.ToList() : result;
             }
 
-#if CSHARP30
             /// <summary>
             /// Read multiple objects from a single record set on the grid
             /// </summary>
-            public IEnumerable<TReturn> Read<TFirst, TSecond, TThird, TReturn>(Func<TFirst, TSecond, TThird, TReturn> func, string splitOn)
-            {
-                return Read<TFirst, TSecond, TThird, TReturn>(func, splitOn, true);
-            }
-#endif
-            /// <summary>
-            /// Read multiple objects from a single record set on the grid
-            /// </summary>
-#if CSHARP30
-            public IEnumerable<TReturn> Read<TFirst, TSecond, TThird, TReturn>(Func<TFirst, TSecond, TThird, TReturn> func, string splitOn, bool buffered)
-#else
             public IEnumerable<TReturn> Read<TFirst, TSecond, TThird, TReturn>(Func<TFirst, TSecond, TThird, TReturn> func, string splitOn = "id", bool buffered = true)
-#endif
             {
                 var result = MultiReadInternal<TFirst, TSecond, TThird, DontMap, DontMap, DontMap, DontMap, TReturn>(func, splitOn);
                 return buffered ? result.ToList() : result;
             }
 
-#if CSHARP30
-            /// <summary>
-            /// Read multiple objects from a single record set on the grid
-            /// </summary>
-            public IEnumerable<TReturn> Read<TFirst, TSecond, TThird, TFourth, TReturn>(Func<TFirst, TSecond, TThird, TFourth, TReturn> func, string splitOn)
-            {
-                return Read<TFirst, TSecond, TThird, TFourth, TReturn>(func, splitOn, true);
-            }
-#endif
 
             /// <summary>
             /// Read multiple objects from a single record set on the grid
             /// </summary>
-#if CSHARP30
-            public IEnumerable<TReturn> Read<TFirst, TSecond, TThird, TFourth, TReturn>(Func<TFirst, TSecond, TThird, TFourth, TReturn> func, string splitOn, bool buffered)
-#else
             public IEnumerable<TReturn> Read<TFirst, TSecond, TThird, TFourth, TReturn>(Func<TFirst, TSecond, TThird, TFourth, TReturn> func, string splitOn = "id", bool buffered = true)
-#endif
             {
                 var result = MultiReadInternal<TFirst, TSecond, TThird, TFourth, DontMap, DontMap, DontMap, TReturn>(func, splitOn);
                 return buffered ? result.ToList() : result;
@@ -4283,7 +3910,6 @@ Type type, IDataReader reader, int startBound = 0, int length = -1, bool returnN
 
 
 
-#if !CSHARP30
             /// <summary>
             /// Read multiple objects from a single record set on the grid
             /// </summary>
@@ -4308,7 +3934,6 @@ Type type, IDataReader reader, int startBound = 0, int length = -1, bool returnN
                 var result = MultiReadInternal<TFirst, TSecond, TThird, TFourth, TFifth, TSixth, TSeventh, TReturn>(func, splitOn);
                 return buffered ? result.ToList() : result;
             }
-#endif
 
             private IEnumerable<T> ReadDeferred<T>(int index, Func<IDataReader, object> deserializer, Identity typedIdentity)
             {
@@ -4382,9 +4007,7 @@ Type type, IDataReader reader, int startBound = 0, int length = -1, bool returnN
         /// Used to pass a DataTable as a TableValuedParameter
         /// </summary>
         public static ICustomQueryParameter AsTableValuedParameter(this DataTable table, string typeName
-#if !CSHARP30
             = null
-#endif
             )
         {
             return new TableValuedParameter(table, typeName);
@@ -4558,11 +4181,7 @@ Type type, IDataReader reader, int startBound = 0, int length = -1, bool returnN
         /// Add a parameter to this dynamic parameter list
         /// </summary>
         public void Add(
-#if CSHARP30
-string name, object value, DbType? dbType, ParameterDirection? direction, int? size, byte? precision, byte? scale
-#else
 string name, object value = null, DbType? dbType = null, ParameterDirection? direction = null, int? size = null, byte? precision = null, byte? scale = null
-#endif
 )
         {
             parameters[Clean(name)] = new ParamInfo() {
@@ -4778,11 +4397,7 @@ string name, object value = null, DbType? dbType = null, ParameterDirection? dir
         /// <param name="dbType"></param>
         /// <param name="size">The size to set on the parameter. Defaults to 0, or DbString.DefaultLength in case of strings.</param>
         /// <returns>The DynamicParameters instance</returns>
-#if CSHARP30
-        public DynamicParameters Output<T>(T target, Expression<Func<T, object>> expression, DbType? dbType, int? size)
-#else
         public DynamicParameters Output<T>(T target, Expression<Func<T, object>> expression, DbType? dbType = null, int? size = null)
-#endif
         {
             var failMessage = "Expression must be a property/field chain off of a(n) {0} instance";
             failMessage = string.Format(failMessage, typeof(T).Name);
